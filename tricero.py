@@ -21,7 +21,7 @@ def dbprocess(path):
         echo(msg='Loading DB...',verbosity=1)
         con = sqlite3.connect(str(path)+dbpathname) #connect to existing or create new if does not exist
         cur = con.cursor()
-        cur.execute('CREATE TABLE daily_trades(time_open datetime, time_close datetime, time_start datetime, time_end datetime, trades_count bigint, volume_traded decimal(20,10), price_open decimal(20,10), price_high decimal(20,10), price_low decimal(20,10), price_close decimal(20,10))')
+        cur.execute('CREATE TABLE daily_trades(index bigint, asset varchar(5), exchange varchar(100), time_start datetime, time_end datetime, trades_count bigint, volume_traded decimal(20,10), price_open decimal(20,10), price_high decimal(20,10), price_low decimal(20,10), price_close decimal(20,10))')
         cur.execute('CREATE INDEX IDX_time ON daily_trades (time_start, time_end)')
         con.commit()
     except sqlite3.Error, e:
@@ -31,11 +31,12 @@ def dbprocess(path):
         if con:
             con.close()
      
-def convert_my_iso_8601(iso_8601, tz_info):
+def convert_my_iso_8601(iso_8601, tz_info=timezone('UTC')):
     assert iso_8601[-1] == 'Z'
     iso_8601 = iso_8601[0:-2]
-    iso_8601_dt = dt.datetime.strptime(iso_8601, '%Y-%m-%dT%H:%M:%S.%f')
-    return iso_8601_dt.replace(tzinfo=timezone('UTC')).astimezone(tz_info)
+    iso_8601_dt = dt.datetime.strptime(iso_8601,'%Y-%m-%dT%H:%M:%S.%f')
+    iso_8601_dt = iso_8601_dt.replace(tzinfo=timezone('UTC')).astimezone(tz_info)
+    return dt.datetime.strftime(iso_8601_dt,'%Y-%m-%d %H:%M:%S')
 
 #Create or Connect to existing Sqlite DB
 if not os.path.isfile(str(dir_path)+dbpathname):
@@ -74,7 +75,6 @@ else:
 
 print '\nData for symbol_id: {}'.format(symbol_id)
 print 'Data rows: {}'.format(len(r.json()))
-#print json.dumps(r.json(), indent=4)
 print '\n API calls remaining: {}'.format(apilimit)
 
 #https://www.dataquest.io/blog/python-pandas-databases/
@@ -82,19 +82,31 @@ print '\n API calls remaining: {}'.format(apilimit)
 df = pandas.read_json(json.dumps(r.json()), orient='columns')
 df['asset']=asset
 df['exchange']=exchange
-#df['time_close']=pandas.to_datetime(df['time_close'], unit='ms')
-my_dt = convert_my_iso_8601(df.time_close.head(1)[0], timezone('UTC'))
-print my_dt
+df['time_start']=df['time_period_start'].apply(convert_my_iso_8601)
+df['time_end']=df['time_period_end'].apply(convert_my_iso_8601)
+df = df[['asset','exchange','time_start','time_end','trades_count','volume_traded','price_open','price_high','price_low','price_close']]
 
-df.to_sql('daily_trades2', con, if_exists='replace', dtype={'time_close': DateTime})
+#Append new data rows to database table
+df.to_sql('daily_trades', con, if_exists='append')
 con.commit()
-#print df
 
+
+
+
+""" Code Snippets
+
+#pretty print JSON
+#print json.dumps(r.json(), indent=4)
+
+#read db into dataframe
 #df = pd.read_sql_query("select * from airlines limit 5;", conn)
 
 #load data into db
 #cur.execute("Insert Into daily_trades(time_open,time_close,time_start,time_end,trades_count,volume_traded,price_open,price_high,price_low,price_close) values('{}','{}','{}','{}','{}','{}','{}','{}','{}','{}')".format()
 #con.commit()
+
+"""
+
 
 """Notes: 
 
